@@ -1,0 +1,18 @@
+# Browser exports and potentially sensitive debugging material
+*.mhtml
+*.har
+screenshots/
+debug/
+
+# Temporary files and logs
+*.log
+*.tmp
+*.bak
+tmp/
+temp/
+
+# Operating system files
+.DS_Store
+Thumbs.db
+desktop.ini
+
