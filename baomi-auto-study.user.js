@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         中国保密在线：2026三类课程自动学习
 // @namespace    https://github.com/HaruteRuby/baomi-auto-study
-// @version      1.0.0
+// @version      1.0.1
 // @description  逐类完成保密教育视频；防止列表未加载时误切分类，并阻止重复打开学习标签页。
 // @author       HaruteRuby
 // @match        https://www.baomi.org.cn/bmCourseDetail/course*
@@ -10,15 +10,28 @@
 // @supportURL   https://github.com/HaruteRuby/baomi-auto-study/issues
 // @updateURL    https://raw.githubusercontent.com/HaruteRuby/baomi-auto-study/main/baomi-auto-study.user.js
 // @downloadURL  https://raw.githubusercontent.com/HaruteRuby/baomi-auto-study/main/baomi-auto-study.user.js
-// @license      MIT
+// @license      GPL-3.0-only
 // @run-at       document-idle
 // @grant        none
 // ==/UserScript==
 
+/*
+ * Copyright (C) 2026 HaruteRuby
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, version 3 of the License.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 (function () {
   'use strict';
 
-  console.info('[保密网自动学习] v1.0.0 已注入');
+  console.info('[保密网自动学习] v1.0.1 已注入');
 
   const CONFIG = Object.freeze({
     // 严格按网页显示顺序完成：一个分类全部 status2 后才进入下一个分类。
@@ -596,4 +609,3 @@
     boot();
   }
 })();
-
