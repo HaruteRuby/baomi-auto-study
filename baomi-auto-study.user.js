@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         中国保密在线：2026三类课程自动学习
 // @namespace    https://github.com/HaruteRuby/baomi-auto-study
-// @version      1.0.1
+// @version      1.0.2
 // @description  逐类完成保密教育视频；防止列表未加载时误切分类，并阻止重复打开学习标签页。
 // @author       HaruteRuby
 // @match        https://www.baomi.org.cn/bmCourseDetail/course*
@@ -31,7 +31,7 @@
 (function () {
   'use strict';
 
-  console.info('[保密网自动学习] v1.0.1 已注入');
+  console.info('[保密网自动学习] v1.0.2 已注入');
 
   const CONFIG = Object.freeze({
     // 严格按网页显示顺序完成：一个分类全部 status2 后才进入下一个分类。
@@ -90,8 +90,12 @@
     isController: IS_PLAYER_PAGE,
     controllerRequestPending: false,
     endedAt: 0,
+    completionEvidence: '',
     completionSent: false,
     completed: false,
+    observedVideo: null,
+    maxProgressRatio: 0,
+    lastVideoTime: 0,
     timer: 0,
   };
 
@@ -413,6 +417,61 @@
     return false;
   }
 
+  function freezeFinishedVideo(video) {
+    if (!video) return;
+    try {
+      video.loop = false;
+      video.autoplay = false;
+      video.removeAttribute('loop');
+      video.removeAttribute('autoplay');
+      video.pause();
+    } catch (error) {
+      log('停止完播视频时出现异常：', error);
+    }
+  }
+
+  function markPlayerFinished(video, evidence) {
+    if (state.endedAt) {
+      freezeFinishedVideo(video);
+      return;
+    }
+    state.endedAt = Date.now();
+    state.completionEvidence = evidence;
+    freezeFinishedVideo(video);
+    log('锁定视频完播状态：', evidence);
+    updatePanel('视频已完播，等待网站保存进度…');
+  }
+
+  function observeVideo(video) {
+    if (state.observedVideo === video) return;
+    state.observedVideo = video;
+    state.maxProgressRatio = 0;
+    state.lastVideoTime = Number(video.currentTime) || 0;
+    // ended 事件可能只持续一瞬间；直接锁存，避免网站自动重播后丢失完播状态。
+    video.addEventListener('ended', () => markPlayerFinished(video, 'video ended 事件'));
+  }
+
+  function exitPlayerPage(video) {
+    closePlayer(video);
+    const tryClose = () => {
+      freezeFinishedVideo(video);
+      try {
+        window.opener?.focus();
+      } catch (error) {
+        log('无法聚焦原课程列表页：', error);
+      }
+      try {
+        window.close();
+      } catch (error) {
+        log('自动关闭学习页失败：', error);
+      }
+    };
+    // 对脚本打开的标签页重复尝试关闭，兼容播放器销毁和页面事件的时间差。
+    window.setTimeout(tryClose, 300);
+    window.setTimeout(tryClose, 1200);
+    window.setTimeout(tryClose, 2600);
+  }
+
   async function playerTick() {
     if (!state.enabled) return;
     if (handleContinuePrompt()) return;
@@ -424,36 +483,41 @@
       return;
     }
 
+    observeVideo(video);
     if (CONFIG.startMuted) video.muted = true;
     video.playbackRate = 1;
     state.currentCourse = normalize(document.title || '当前课程');
-    const finished = video.ended || hasVisibleCompletionMarker() ||
-      (Number.isFinite(video.duration) && video.duration > 0 && video.currentTime >= video.duration - 0.8);
+    const durationValue = Number(video.duration);
+    const currentValue = Number(video.currentTime) || 0;
+    const hasDuration = Number.isFinite(durationValue) && durationValue > 0;
+    const progressRatio = hasDuration ? currentValue / durationValue : 0;
+    const rewoundAfterFinish = hasDuration && state.maxProgressRatio >= 0.98 &&
+      currentValue < Math.min(3, durationValue * 0.05) && state.lastVideoTime > currentValue + 2;
+    state.maxProgressRatio = Math.max(state.maxProgressRatio, progressRatio);
+    state.lastVideoTime = currentValue;
 
-    if (finished) {
-      if (!state.endedAt) {
-        state.endedAt = Date.now();
-        updatePanel('视频已完播，等待网站保存进度…');
-        return;
-      }
+    const completionEvidence = video.ended ? 'video.ended' :
+      hasVisibleCompletionMarker() ? '结束画面' :
+      (hasDuration && currentValue >= durationValue - 1.5) ? '播放进度到达结尾' :
+      rewoundAfterFinish ? '播完后自动回到开头' : '';
+
+    if (completionEvidence) markPlayerFinished(video, completionEvidence);
+
+    // endedAt 一旦写入便不再清空：网站即使自动重播，也仍按已完播处理。
+    if (state.endedAt) {
+      freezeFinishedVideo(video);
       if (!state.completionSent && Date.now() - state.endedAt >= CONFIG.closeDelayMs) {
         state.completionSent = true;
-        broadcast('course-finished', { title: state.currentCourse });
+        broadcast('course-finished', {
+          title: state.currentCourse,
+          evidence: state.completionEvidence,
+        });
         updatePanel('已通知课程列表页刷新，正在退出学习页…');
-        closePlayer(video);
-        window.setTimeout(() => {
-          try {
-            window.opener?.focus();
-          } catch (error) {
-            log('无法聚焦原课程列表页：', error);
-          }
-          window.close();
-        }, 1800);
+        exitPlayerPage(video);
       }
       return;
     }
 
-    state.endedAt = 0;
     const duration = Number.isFinite(video.duration) ? Math.floor(video.duration) : 0;
     const current = Math.floor(video.currentTime || 0);
     updatePanel(`正在播放（${current}/${duration || '?'} 秒）`);
